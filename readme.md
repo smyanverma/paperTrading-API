@@ -146,6 +146,3 @@ That single command brings up Postgres, Redis, the Django API, a Celery worker, 
 
 ---
 
-## What I'd tell an interviewer
-
-> I built a paper trading backend where the trading logic itself is intentionally simple — buy or sell at the current market price, no order matching — so that I could focus entirely on the distributed systems problems around it: async task execution decoupled from the HTTP request cycle, row-level locking to prevent race conditions on concurrent trades, a cache-aside pattern with write-triggered invalidation for expensive reads, and a scheduled background job feeding live market data through the whole pipeline. Everything runs as independently scalable, containerized services that only communicate through Postgres and Redis — never direct calls — which is the same shape a much larger production system would take.
