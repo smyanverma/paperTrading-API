@@ -42,7 +42,6 @@ INSTALLED_APPS = [
     # Third-Party Apps
     'rest_framework',
     'rest_framework.authtoken',  # Enables simple API tokens
-    'django_celery_results',     # Stores Celery task results in PostgreSQL
     
     # Your App
     'engine',
@@ -82,14 +81,17 @@ WSGI_APPLICATION = 'paperTrading.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
+import os
+#This is done bcs if im running it locally then it uses my local settings, if in docker then docker settings
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'paper_trading_db',
-        'USER': 'postgres',
-        'PASSWORD': 'smyan',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': os.environ.get('DB_NAME', 'paper_trading_db'),
+        'USER': os.environ.get('DB_USER', 'postgres'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'smyan'),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
 
@@ -144,11 +146,37 @@ REST_FRAMEWORK = {
     ]
 }
 
+
+
+REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
+
+
+
 #celery
 # Celery settings
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0' #OR CAN USE DB HERE
+CELERY_BROKER_URL = f'redis://{REDIS_HOST}:6379/0'
+CELERY_RESULT_BACKEND = f'redis://{REDIS_HOST}:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
+
+
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    'refresh-stock-prices-every-60-seconds': {
+        'task': 'engine.tasks.refresh_stock_prices',
+        'schedule': 60.0,  # seconds — comfortably above Yahoo's practical rate limits for a handful of tickers
+    },
+}
+
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": f"redis://{REDIS_HOST}:6379/1",
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        }
+    }
+}

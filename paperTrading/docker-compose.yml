@@ -1,0 +1,71 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: paper_trading_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: smyan
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  web:
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_HOST=db
+      - DB_NAME=paper_trading_db
+      - DB_USER=postgres
+      - DB_PASSWORD=smyan
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+    depends_on:
+      - db
+      - redis
+
+  worker:
+    build: .
+    command: celery -A paperTrading worker --loglevel=info --pool=solo
+    volumes:
+      - .:/app
+    environment:
+      - DB_HOST=db
+      - DB_NAME=paper_trading_db
+      - DB_USER=postgres
+      - DB_PASSWORD=smyan
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - FINNHUB_API_KEY=d9djqp9r01qui7p2f8c0d9djqp9r01qui7p2f8cg
+    depends_on:
+      - db
+      - redis
+
+  beat:
+    build: .
+    command: celery -A paperTrading beat --loglevel=info
+    volumes:
+      - .:/app
+    environment:
+      - DB_HOST=db
+      - DB_NAME=paper_trading_db
+      - DB_USER=postgres
+      - DB_PASSWORD=smyan
+      - DB_PORT=5432
+      - REDIS_HOST=redis
+      - FINNHUB_API_KEY=d9djqp9r01qui7p2f8c0d9djqp9r01qui7p2f8cg
+    depends_on:
+      - db
+      - redis
+
+volumes:
+  postgres_data:

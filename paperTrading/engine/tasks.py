@@ -5,6 +5,13 @@ from django.db import transaction
 
 from .models import Stock, PortfolioItem, Trade, UserProfile
 
+#celery beat
+import os
+import requests
+FINNHUB_API_KEY = os.environ.get('FINNHUB_API_KEY')
+#redis cache
+from django.core.cache import cache
+
 
 @shared_task
 def execute_trade(trade_id):
@@ -59,10 +66,14 @@ def execute_trade(trade_id):
 
                 profile.balance += cost
                 profile.save()
+            
 
             trade.price_at_execution = stock.current_price
             trade.status = Trade.Status.COMPLETED
             trade.save()
+        
+        #invalidate the cached p&l 
+        cache.delete(f"pnl:user_{profile.user_id}")
 
         return {"status": "COMPLETED", "trade_id": trade.id}
 
@@ -71,3 +82,34 @@ def execute_trade(trade_id):
         trade.failure_reason = str(e)
         trade.save()
         return {"status": "FAILED", "reason": str(e)}
+
+
+
+@shared_task
+def refresh_stock_prices():
+    tickers = list(Stock.objects.values_list('ticker', flat=True))
+    if not tickers:
+        return {"updated": 0}
+
+    updated = 0
+    for ticker in tickers:
+        try:
+            response = requests.get(
+                "https://finnhub.io/api/v1/quote",
+                params={"symbol": ticker, "token": FINNHUB_API_KEY},
+                timeout=5
+            )
+            response.raise_for_status()
+            data = response.json()
+            price = data.get('c')  # 'c' = current price in Finnhub's response
+
+            if not price or price == 0:
+                print(f"No valid price for {ticker}, skipping.")
+                continue
+
+            Stock.objects.filter(ticker=ticker).update(current_price=price)
+            updated += 1
+        except Exception as e:
+            print(f"Failed to update {ticker}: {e}")
+
+    return {"updated": updated}

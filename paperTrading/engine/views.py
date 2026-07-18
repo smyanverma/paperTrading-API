@@ -120,3 +120,52 @@ class TradeStatusView(APIView):
             "price_at_execution": str(trade.price_at_execution) if trade.price_at_execution else None,
             "failure_reason": trade.failure_reason,
         })
+
+
+
+from django.core.cache import cache
+
+
+class ProfitLossView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        profile = request.user.profile
+        cache_key = f"pnl:user_{profile.user_id}"
+
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response(cached)
+
+        holdings = PortfolioItem.objects.filter(profile=profile, shares__gt=0).select_related('stock')
+
+        holdings_data = []
+        total_unrealized_pnl = Decimal('0')
+        total_market_value = Decimal('0')
+
+        for item in holdings:
+            current_value = item.stock.current_price * item.shares
+            cost_basis = (item.average_buy_price or Decimal('0')) * item.shares
+            unrealized_pnl = current_value - cost_basis
+
+            total_unrealized_pnl += unrealized_pnl
+            total_market_value += current_value
+
+            holdings_data.append({
+                "ticker": item.stock.ticker,
+                "shares": item.shares,
+                "average_buy_price": str(item.average_buy_price),
+                "current_price": str(item.stock.current_price),
+                "unrealized_pnl": str(unrealized_pnl),
+            })
+
+        result = {
+            "cash_balance": str(profile.balance),
+            "market_value_of_holdings": str(total_market_value),
+            "total_portfolio_value": str(profile.balance + total_market_value),
+            "total_unrealized_pnl": str(total_unrealized_pnl),
+            "holdings": holdings_data,
+        }
+
+        cache.set(cache_key, result, timeout=20)  # 10 second TTL
+        return Response(result)
